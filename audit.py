@@ -18,10 +18,15 @@ from xml_parse import parse_xml, parse_xml_inventory, parse_xml_cos, \
     qfx10002_get_output, qfx10k_get_output, unknown_get_output
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
+
 if not os.path.exists('logs'):
     os.makedirs('logs', 0o755)
+elif not os.path.exists('result'):
     os.makedirs('result', 0o755)
+elif not os.path.exists('data'):
     os.makedirs('data', 0o755)
+elif not os.path.exists('raw_data'):
+    os.makedirs('raw_data', 0o755)
 
 logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 logging.getLogger("ncclient").setLevel(logging.WARNING)
