@@ -354,8 +354,11 @@ def connect_n_collect(host):
         re_storage = output_dict_xml['storage_xml'].findall('.//multi-routing-engine-item')
         storage_list = []
         for item in re_storage:
-            re = item.xpath('.//re-name')[0].text
-            storage_list.extend(parse_xml_storage(root=item, re=re, df_list=[]))
+            if output_dict_xml['storage_xml'].findall('.//error'):
+                storage_list.append(pd.DataFrame())
+            else:
+                re = item.xpath('.//re-name')[0].text
+                storage_list.extend(parse_xml_storage(root=item, re=re, df_list=[]))
     except Exception as err:
         logging.error(f'{hostname}:{host} - storage error - {err}')
         storage_list = parse_xml_storage(root=output_dict_xml['storage_xml'], re='re', df_list=[])
