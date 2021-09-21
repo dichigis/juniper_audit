@@ -758,7 +758,7 @@ scheduler_map_default = scheduler_map[scheduler_map['scheduler-map-name'] == '<d
 
 inventory_clear = inventory[~(inventory['chassis_style'] == 'inventory')]
 inventory_clear = inventory_clear.drop(columns=['chassis_style'])
-
+inventory_clear['series'] = None
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(MX)), 'series'] = 'MX'
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(QFX10k)), 'series'] = 'QFX10k'
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(EX_old)), 'series'] = 'EX42_series'
