@@ -673,18 +673,20 @@ try:
 except Exception as err:
     logging.error(f'high_load_cpu_re - {err}')
 
-alarm = clean_text(alarm)
-alarm.drop(columns=['active-alarm-count'], inplace=True)
-main_alarm = alarm[~((alarm['alarm-description'].fillna('Unnkown').str.contains('Link down')) | (alarm['alarm-description'].fillna('Unnkown').str.contains('Backup RE Active')))].dropna()
-main_alarm['alarm-time'] = pd.to_datetime(main_alarm['alarm-time_seconds'], unit='s') + pd.Timedelta(3, unit="h")
-main_alarm.drop(columns=['alarm-type','alarm-time_seconds'], inplace=True)
-main_alarm['alarm-time-ago'] = pd.Timestamp.now() - main_alarm['alarm-time']
-main_alarm = main_alarm[['hostname', 'alarm-time', 'alarm-time-ago', 'alarm-description']]
-last_2week_alarm = main_alarm[main_alarm['alarm-time-ago'] < pd.Timedelta(14, unit='day')]
-if len(main_alarm) > 0:
-    main_alarm.reset_index(drop=True).to_excel(result_path + 'main_alarm.xlsx', engine='xlsxwriter')
-    if len(last_2week_alarm) > 0:
-        last_2week_alarm.reset_index(drop=True).to_excel(result_path + 'last_week_alarm.xlsx', engine='xlsxwriter')
+if len(alarm) > 0:
+    alarm = clean_text(alarm)
+    alarm.drop(columns=['active-alarm-count'], inplace=True)
+    main_alarm = alarm[~((alarm['alarm-description'].fillna('Unnkown').str.contains('Link down')) | (alarm['alarm-description'].fillna('Unnkown').str.contains('Backup RE Active')))].dropna()
+    main_alarm['alarm-time'] = pd.to_datetime(main_alarm['alarm-time_seconds'], unit='s') + pd.Timedelta(3, unit="h")
+    main_alarm.drop(columns=['alarm-type','alarm-time_seconds'], inplace=True)
+    main_alarm['alarm-time-ago'] = pd.Timestamp.now() - main_alarm['alarm-time']
+    main_alarm = main_alarm[['hostname', 'alarm-time', 'alarm-time-ago', 'alarm-description']]
+    last_2week_alarm = main_alarm[main_alarm['alarm-time-ago'] < pd.Timedelta(14, unit='day')]
+    if len(main_alarm) > 0:
+        main_alarm.reset_index(drop=True).to_excel(result_path + 'main_alarm.xlsx', engine='xlsxwriter')
+        if len(last_2week_alarm) > 0:
+            last_2week_alarm.reset_index(drop=True).to_excel(result_path + 'last_week_alarm.xlsx', engine='xlsxwriter')
+
 environment = clean_text(environment)
 environment_status = environment[environment['status'] != 'OK'][['hostname','name','status']]
 environment_hot = environment[environment['temperature_celsius'] > 60][['hostname','name','temperature_celsius']].sort_values(by='temperature_celsius', ascending=False)
