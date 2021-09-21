@@ -764,6 +764,7 @@ inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(QFX10k)), 'se
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(EX_old)), 'series'] = 'EX42_series'
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(EX_new)), 'series'] = 'EX43_EX46'
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(T_series)), 'series'] = 'T'
+logging.error(inventory_clear.columns)
 inventory_clear.columns = ['name', 'description', 'chassis-module', 'serial-number', 'part-number', 'clei-code',
                            'model-number', 'hostname', 'ip-address', 'model', 'series', 'version']
 inventory_clear.reset_index(drop=True).to_excel(result_path + 'inventory.xlsx', engine='xlsxwriter')
