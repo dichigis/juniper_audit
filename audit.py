@@ -20,8 +20,12 @@ from xml_parse import parse_xml, parse_xml_inventory, parse_xml_cos, \
 dir_path = os.path.dirname(os.path.realpath(__file__))
 if not os.path.exists('logs'):
     os.makedirs('logs', 0o755)
+if not os.path.exists('result'):
     os.makedirs('result', 0o755)
+if not os.path.exists('data'):
     os.makedirs('data', 0o755)
+if not os.path.exists('raw_data'):
+    os.makedirs('raw_data', 0o755)
 
 logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 logging.getLogger("ncclient").setLevel(logging.WARNING)
@@ -114,7 +118,7 @@ def connect_n_collect(host):
 
         valid_credential = pd.DataFrame({'username': user, 'passwd': user}, index=[0])
 
-        with Device(host=host, user=user, passwd=passwd, port=22, ssh_config='/home/dichigis/.ssh/config', timeout=40) \
+        with Device(host=host, user=user, passwd=passwd, port=22, ssh_config='~/.ssh/config', timeout=40) \
                 as dev:
             model = dev.facts['model']
             hostname = dev.facts['hostname']
@@ -593,7 +597,7 @@ def connect_n_collect(host):
 logging.info(f'Script starts\n===================================')
 device_list = pd.read_csv(dir_path + '/data/hosts.csv', sep=';')
 
-with Pool(16) as p:
+with Pool(4) as p:
     audit_list = list(p.map(connect_n_collect, list(device_list['hosts'].unique())))
 
 for df in paramaters:
@@ -689,14 +693,35 @@ if len(alarm) > 0:
 
 environment = clean_text(environment)
 environment_status = environment[environment['status'] != 'OK'][['hostname','name','status']]
-environment_hot = environment[environment['temperature_celsius'] > 60][['hostname','name','temperature_celsius']].sort_values(by='temperature_celsius', ascending=False)
-fans = environment[environment['comment'].str.contains('intermediate-speed') | environment['comment'].str.contains('high speed')][['hostname','comment']]
-environment_hot = pd.merge(environment_hot, fans, on='hostname')
+environment_status.reset_index(drop=True).to_excel(result_path + 'environment_status.xlsx', engine='xlsxwriter')
+
+environment = clean_text(environment)
+environment['name'] = environment['name'].str.replace('Routing Engine', 'RE')
+environment['name'] = environment['name'].str.replace('Power Supply', 'PEM')
+environment['comment_cat'] = 0
+environment['comment'] = environment['comment'].fillna('no_comment')
+environment.loc[environment['comment'].str.contains('intermediate'), 'comment_cat'] = 1
+environment.loc[environment['comment'].str.contains('high'), 'comment_cat'] = 2
+environment.loc[environment['comment'].str.contains('full'), 'comment_cat'] = 3
+environment['short_name'] = environment['name'].str.extract(r'^(\w{2,4}\s+\d+)\.*')
+environment.loc[environment['name'].isna(), 'short_name'] = environment['name'].str.extract(r'^(\w{2,3})\s+.*')
+temperature = pd.concat([i.sort_values(by='temperature_celsius', ascending=False).head(1) for _, i in environment.groupby(['hostname','short_name'])])
+temperature = temperature.loc[:, ['hostname','short_name','temperature_celsius']]
+fan = pd.concat([i.loc[i['comment']!='no_comment', ['hostname','status','comment','comment_cat']].iloc[[i['comment_cat'].argmax()]] for _, i in environment.loc[environment['class'] == 'Fans'].groupby(['hostname'])])
+fan.loc[fan['comment'].isna(), 'comment'] = fan.loc[fan['comment'].isna(), 'status']
+fan = fan.drop(columns=['status','comment_cat']).drop_duplicates()
+normal_temp_abnormal_fan = set(temperature.loc[(temperature.temperature_celsius.between(1, 70)) & (~temperature.hostname.isin(list(fan[fan.comment.str.contains('ormal')].hostname))),:].hostname)
+top_temperature = temperature[temperature.temperature_celsius > 70]
+fans_abnormal = temperature[(temperature.hostname.isin(normal_temp_abnormal_fan)) & (temperature.temperature_celsius > 0)]
+fans_abnormal = pd.concat([i.sort_values(by='temperature_celsius', ascending=False).head(1) for _, i in fans_abnormal.groupby(['hostname'])])
+environment_result = pd.concat([top_temperature, fans_abnormal])
+environment_result = pd.merge(environment_result, fan, how='left', on='hostname')
+environment_result.sort_values(by='temperature_celsius',ascending=False).drop_duplicates().reset_index(drop=True).to_excel(result_path + 'environment_hot.xlsx', engine='xlsxwriter')
 
 if len(core_dumps) > 0:
     core_dumps = clean_text(core_dumps)
-    core_count_series = core_dumps.groupby(['hostname','re-name'])['file-name'].count()
-    core_size_series = core_dumps.groupby(['hostname','re-name'])['file-size'].sum() / 1048576
+    core_count_series = core_dumps.groupby(['hostname', 're-name'])['file-name'].count()
+    core_size_series = core_dumps.groupby(['hostname', 're-name'])['file-size'].sum() / 1048576
     core_time_series = pd.to_datetime(core_dumps.groupby(['hostname','re-name'])['file-date'].max(), unit='s')
     cores = pd.concat([core_count_series, core_size_series, core_time_series], axis=1).rename(columns={'file-name':'files', 'file-size':'MB', 'file-date':'last_date'})
     cores['time-ago'] = pd.Timestamp.now() - cores['last_date']
@@ -765,8 +790,8 @@ inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(EX_old)), 'se
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(EX_new)), 'series'] = 'EX43_EX46'
 inventory_clear.loc[inventory_clear['model'].str.contains('|'.join(T_series)), 'series'] = 'T'
 logging.error(inventory_clear.columns)
-inventory_clear.columns = ['name', 'description', 'chassis-module', 'serial-number', 'part-number', 'clei-code',
-                           'model-number', 'hostname', 'ip-address', 'model', 'series', 'version']
+inventory_clear.columns = ['name','description', 'serial-number', 'clei-code', 'model-number',
+       'part-number', 'hostname', 'ip-address', 'model', 'series','version']
 inventory_clear.reset_index(drop=True).to_excel(result_path + 'inventory.xlsx', engine='xlsxwriter')
 mx_inventory = inventory_clear[inventory_clear['model'].str.contains('MX')]
 
@@ -884,9 +909,6 @@ if len(re_fail_state) > 0:
 if len(high_load_cpu_re) > 0:
     high_load_cpu_re.reset_index(drop=True).to_excel(result_path + 'high_load_cpu_re.xlsx', engine='xlsxwriter')
 
-
-environment_status.reset_index(drop=True).to_excel(result_path + 'environment_status.xlsx', engine='xlsxwriter')
-environment_hot.reset_index(drop=True).to_excel(result_path + 'environment_hot.xlsx', engine='xlsxwriter')
 ntp_check.reset_index(drop=True).to_excel(result_path + 'ntp.xlsx', engine='xlsxwriter')
 fpc_rebooted.reset_index(drop=True).to_excel(result_path + 'fpc_reboot.xlsx', engine='xlsxwriter')
 fpc_utilization.reset_index(drop=True).to_excel(result_path + 'fpc_utilization.xlsx', engine='xlsxwriter')
