@@ -117,41 +117,77 @@ def connect_n_collect(host):
         logging.debug(f'{hostname}:{host} - found known credentials')
 
         valid_credential = pd.DataFrame({'username': user, 'passwd': user}, index=[0])
+        try:
+            with Device(host=host, user=user, passwd=passwd, port=22, ssh_config='~/.ssh/config', timeout=40) \
+                    as dev:
+                model = dev.facts['model']
+                hostname = dev.facts['hostname']
+                version = dev.facts['version']
+                logging.info(f'{hostname}:{host} - Connected by known credentials')
 
-        with Device(host=host, user=user, passwd=passwd, port=22, ssh_config='~/.ssh/config', timeout=40) \
-                as dev:
-            model = dev.facts['model']
-            hostname = dev.facts['hostname']
-            version = dev.facts['version']
-            logging.info(f'{hostname}:{host} - Connected by known credentials')
+                try:
+                    if model in ['EX2200-24T-4G', 'EX4200-24F', 'EX4200-48T', 'EX4300-48T', 'EX4650-48Y-8C',
+                                 'EX4550-32F', 'QFX5100-48T-6Q', 'QFX5100-48S-6Q']:
+                        output_dict_xml = ex_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                    elif model in ['MX5-T', 'MX80', 'MX80-P']:
+                        output_dict_xml = mx_small_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                    elif model in ['MX104']:
+                        output_dict_xml = mx104_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                    elif model in ['MX240', 'MX480', 'MX960']:
+                        output_dict_xml = mx_classical_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                    elif model in ['T1600', 'T4000']:
+                        output_dict_xml = tseries_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                    elif model in ['QFX10002-72Q']:
+                        output_dict_xml = qfx10002_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                    elif model in ['QFX10016']:
+                        output_dict_xml = qfx10k_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                    else:
+                        logging.info(f'Unmatch - {model}')
+                        output_dict_xml = unknown_get_output(dev=dev, output_dict_xml=output_dict_xml)
+                except Exception as err:
+                    output_dict['error'] = pd.DataFrame({'time': [strftime("%Y-%m-%d %H:%M:%S", localtime())],
+                                                         'ip': [host],
+                                                         'error': [err]}, index=[0])
+                    logging.error(f'{host} - {err}')
+                    return output_dict
 
-            try:
-                if model in ['EX2200-24T-4G', 'EX4200-24F', 'EX4200-48T', 'EX4300-48T', 'EX4650-48Y-8C',
-                             'EX4550-32F', 'QFX5100-48T-6Q', 'QFX5100-48S-6Q']:
-                    output_dict_xml = ex_get_output(dev=dev, output_dict_xml=output_dict_xml)
-                elif model in ['MX5-T', 'MX80', 'MX80-P']:
-                    output_dict_xml = mx_small_get_output(dev=dev, output_dict_xml=output_dict_xml)
-                elif model in ['MX104']:
-                    output_dict_xml = mx104_get_output(dev=dev, output_dict_xml=output_dict_xml)
-                elif model in ['MX240', 'MX480', 'MX960']:
-                    output_dict_xml = mx_classical_get_output(dev=dev, output_dict_xml=output_dict_xml)
-                elif model in ['T1600', 'T4000']:
-                    output_dict_xml = tseries_get_output(dev=dev, output_dict_xml=output_dict_xml)
-                elif model in ['QFX10002-72Q']:
-                    output_dict_xml = qfx10002_get_output(dev=dev, output_dict_xml=output_dict_xml)
-                elif model in ['QFX10016']:
-                    output_dict_xml = qfx10k_get_output(dev=dev, output_dict_xml=output_dict_xml)
-                else:
-                    logging.info(f'Unmatch - {model}')
-                    output_dict_xml = unknown_get_output(dev=dev, output_dict_xml=output_dict_xml)
-            except Exception as err:
-                output_dict['error'] = pd.DataFrame({'time': [strftime("%Y-%m-%d %H:%M:%S", localtime())],
-                                                     'ip': [host],
-                                                     'error': [err]}, index=[0])
-                logging.error(f'{host} - {err}')
-                return output_dict
+                logging.info(f'{hostname}:{host} - Information collected by known credentials')
 
-            logging.info(f'{hostname}:{host} - Information collected by known credentials')
+        except ProbeError as err:
+            output_dict['error'] = pd.DataFrame({'time': [strftime("%Y-%m-%d %H:%M:%S", localtime())],
+                                                 'ip': [host],
+                                                 'error': ['Unreachable']}, index=[0])
+            logging.error(f'{host} - {err}')
+            return output_dict
+        #TODO what if credentials changed?
+
+        # except ConnectAuthError:
+        #
+        #     if attempt == len(credential):
+        #         output_dict['error'] = pd.DataFrame({'time': [strftime("%Y-%m-%d %H:%M:%S", localtime())],
+        #                                              'ip': [host],
+        #                                              'error': ['AuthError']}, index=[0])
+        #         logging.error(f'{host} - Auth Error {i[0]} - {i[1]}. All credential is failed')
+        #         return output_dict
+        #     else:
+        #         logging.error(f'{host} - Auth Error. Try next')
+        #         attempt += 1
+        #         continue
+        except ConnectTimeoutError as err:
+            output_dict['error'] = pd.DataFrame({'time': [strftime("%Y-%m-%d %H:%M:%S", localtime())],
+                                                 'ip': [host],
+                                                 'error': ['ConnectTimeout']}, index=[0])
+            logging.error(f'{host} - {err}')
+            return output_dict
+        except ConnectError as err:
+            output_dict['error'] = pd.DataFrame({'time': [strftime("%Y-%m-%d %H:%M:%S", localtime())],
+                                                 'ip': [host],
+                                                 'error': ['notJuniper']}, index=[0])
+            logging.error(f'{host} - {err}')
+            return output_dict
+        except Exception as err:
+            logging.error(f'Unexpected error - {host} - {err}')
+
 
     else:
         logging.error(f'{host} - let\'s try a few known credential')
@@ -599,6 +635,10 @@ device_list = pd.read_csv(dir_path + '/data/hosts.csv', sep=';')
 
 with Pool(4) as p:
     audit_list = list(p.map(connect_n_collect, list(device_list['hosts'].unique())))
+#
+# audit_list = []
+# for host in list(device_list['hosts'].unique()):
+#     audit_list.append(connect_n_collect(host))
 
 for df in paramaters:
     locals()[df] = pd.concat([i[df] for i in audit_list if isinstance(i, dict)])
@@ -627,14 +667,19 @@ except:
 
 optics = optics[optics.columns[~optics.columns.str.contains("alarm")]]
 optics = optics[optics.columns[~optics.columns.str.contains("warn")]]
-optics = pd.merge(optics, description, on=["name", "hostname"])
+optics = pd.merge(optics, description, how='left', on=["name", "hostname"])
 optics['laser-rx-optical-power-dbm'] = optics['laser-rx-optical-power-dbm'].replace('- Inf', '-40').astype('float')
 low_rx_optical_power_dbm = optics[(optics['laser-rx-optical-power-dbm'] < -13) & (optics['admin-status'] == 'up')][
     ['hostname', 'name', 'admin-status', 'oper-status', 'laser-rx-optical-power-dbm', 'description']]
+
+low_rx_optical_power_dbm.reset_index(drop=True).to_excel(result_path + 'low_rx_optical_power_dbm.xlsx',
+                                                         engine='xlsxwriter')
 optics['module-temperature_celsius'] = optics['module-temperature_celsius'].fillna(0).astype('float')
 high_rx_module_temperature_celsius = \
 optics[(optics['module-temperature_celsius'] > 60) & (optics['admin-status'] == 'up')][
     ['hostname', 'name', 'admin-status', 'oper-status', 'module-temperature_celsius', 'description']]
+high_rx_module_temperature_celsius.reset_index(drop=True).to_excel(
+    result_path + 'high_rx_module_temperature_celsius.xlsx', engine='xlsxwriter')
 
 storage = clean_text(storage)
 inventory = clean_text(inventory)
@@ -656,11 +701,12 @@ storage = storage.rename(columns={'total-blocks': 'total_gibibytes',
                                   'used-blocks': 'used_gibibytes',
                                   'available-blocks': 'available_gibibytes',
                                   're-name': 'name'})
-storage = pd.merge(storage, model, on=["name", "hostname"])
+storage = pd.merge(storage, model, how='left', on=["name", "hostname"])
 low_space = storage[(storage['used-percent'] > 80) & (storage['available_gibibytes'] > 0)]
 low_space = low_space[['hostname', 'ip-address', 'description', 'name', 'mounted-on', 'filesystem-name',
                        'used-percent', 'total_gibibytes', 'total-blocks_format', 'used_gibibytes',
                        'used-blocks_format', 'available_gibibytes', 'available-blocks_format']]
+low_space.reset_index(drop=True).to_excel(result_path + 'low_space.xlsx', engine='xlsxwriter')
 
 re = clean_text(re)
 re_cpu_temperature = re[re['cpu-temperature_celsius'] > 60][['hostname', 'model', 'cpu-temperature']]
@@ -669,13 +715,20 @@ re_reboot = re[re['up-time_seconds'] / 86400 < 14][
 re_memory_buffer_utilization = re[re['memory-buffer-utilization'] > 50][
     ['hostname', 'model', 'memory-dram-size', 'memory-buffer-utilization']]
 re_fail_state = re[re['status'] != 'OK']
+re_reboot.reset_index(drop=True).to_excel(result_path + 're_reboot.xlsx', engine='xlsxwriter')
+re_memory_buffer_utilization.reset_index(drop=True).to_excel(result_path + 're_memory_buffer_utilization.xlsx',
+                                                             engine='xlsxwriter')
+if len(re_fail_state) > 0:
+    re_fail_state.reset_index(drop=True).to_excel(result_path + 're_fail_state.xlsx', engine='xlsxwriter')
 
-try:
+
+if 'cpu-user1' in re.columns:
     high_load_cpu_re = \
-    re[((re['cpu-idle3'] < 50) | (re['cpu-idle2'] < 50) | (re['cpu-system2'] > 30) | (re['cpu-system3'] > 30)) & (re['mastership-state'] == 'master')][
+    re[((re['cpu-idle3'] < 50) | (re['cpu-idle2'] < 50) | (re['cpu-system2'] > 30) | (re['cpu-system3'] > 30)) &\
+       (re['mastership-state'] == 'master')][
         ['hostname', 'model', 'slot', 'cpu-idle2', 'cpu-idle3', 'cpu-system2', 'cpu-system3']]
-except Exception as err:
-    logging.error(f'high_load_cpu_re - {err}')
+    high_load_cpu_re.reset_index(drop=True).to_excel(result_path + 'high_load_cpu_re.xlsx', engine='xlsxwriter')
+
 
 if len(alarm) > 0:
     alarm = clean_text(alarm)
@@ -731,7 +784,7 @@ if len(core_dumps) > 0:
         last_cores.append(j)
     last_cores = pd.concat(last_cores)
     last_cores = last_cores[['hostname','re-name','file-name']]
-    cores = pd.merge(cores, last_cores, on=['hostname','re-name'])
+    cores = pd.merge(cores, last_cores, how='left', on=['hostname','re-name'])
     cores = cores.rename(columns={'files':'total_files', 'file-name':'last_core_dump'})
     cores = cores.sort_values(by='time-ago')
     cores.reset_index(drop=True).to_excel(result_path + 'core_dumps.xlsx', engine='xlsxwriter')
@@ -740,15 +793,26 @@ uptime = clean_text(uptime)
 ntp_check = uptime.loc[:, ['hostname','time-source']]
 ntp_check.dropna(inplace=True)
 ntp_check = ntp_check[~ntp_check['time-source'].str.contains('NTP CLOCK')]
+ntp_check.reset_index(drop=True).to_excel(result_path + 'ntp.xlsx', engine='xlsxwriter')
+
+
 system_booted = uptime[uptime['type'] == 'system-booted-time'].loc[:,['hostname','date-time_seconds']]
 system_booted['date-time_seconds'] = pd.to_datetime(system_booted['date-time_seconds'], unit='s')
 system_booted['time-ago'] = pd.Timestamp.now() - system_booted['date-time_seconds']
 system_booted = system_booted.rename(columns={'date-time_seconds':'system_booted_date_time', 'time-ago':'system_booted_time-ago'})
 fpc = clean_text(fpc)
-fpc = fpc.loc[:, ['hostname','slot','cpu-15min-avg','memory-heap-utilization','memory-buffer-utilization']]
+fpc_original = fpc.copy()
+if 'cpu-15min-avg' in fpc.columns:
+    fpc['cpu'] = None
+    fpc.loc[fpc['cpu-15min-avg'].isna(), 'cpu'] = fpc.loc[fpc['cpu-15min-avg'].isna(), 'cpu-total']
+else:
+    fpc = fpc.rename(columns={'cpu-total':'cpu'})
+if 'memory-heap-utilization' not in fpc.columns:
+    fpc['memory-heap-utilization'] = 0
+fpc = fpc.loc[:, ['hostname','slot','cpu','memory-heap-utilization','memory-buffer-utilization']]
 fpc_detail = clean_text(fpc_detail)
 fpc = pd.merge(fpc_detail, fpc, on=['hostname','slot'])
-fpc = pd.merge(fpc, system_booted, on='hostname')
+fpc = pd.merge(fpc, system_booted, how='left', on='hostname')
 fpc['up-time_seconds'] = pd.pandas.to_timedelta(fpc['up-time_seconds'], unit='s')
 fpc['time_reboot'] = fpc['system_booted_time-ago'] - fpc['up-time_seconds']
 fpc['start-time_seconds'] = pd.to_datetime(fpc['start-time_seconds'], unit='s')
@@ -762,15 +826,18 @@ fpc_rebooted = fpc_rebooted.sort_values(by='time_diff')
 fpc_model_slot = fpc_model.rename(columns={'name':'slot'})
 fpc_model_slot['slot'] = fpc_model_slot['slot'].str.replace('fpc','')
 fpc_model_slot['slot'] = fpc_model_slot['slot'].astype('int')
-fpc = pd.merge(fpc, fpc_model_slot, on=['hostname','slot'])
-fpc_utilization = fpc.loc[fpc['state'] == 'Online', ['hostname', 'slot', 'description', 'cpu-15min-avg',
+fpc = pd.merge(fpc, fpc_model_slot, how='left', on=['hostname','slot'])
+fpc_utilization = fpc.loc[fpc['state'] == 'Online', ['hostname', 'slot', 'description', 'cpu',
                                                      'memory-heap-utilization', 'memory-buffer-utilization',
                                                      'memory-dram-size']]
+fpc_utilization.reset_index(drop=True).to_excel(result_path + 'fpc_utilization.xlsx', engine='xlsxwriter')
+fpc_rebooted.reset_index(drop=True).to_excel(result_path + 'fpc_reboot.xlsx', engine='xlsxwriter')
+
 cos = clean_text(cos)
 scheduler_map = cos.loc[:, ['hostname', 'interface-name', 'scheduler-map-name', 'interface-queues-supported',
                             'interface-queues-in-use']]
 description = description.rename(columns={'name':'interface-name'})
-scheduler_map = pd.merge(scheduler_map, description, on=['hostname','interface-name'])
+scheduler_map = pd.merge(scheduler_map, description, how='left', on=['hostname','interface-name'])
 scheduler_map = scheduler_map.loc[(scheduler_map['admin-status'] == 'up') & \
                                   (scheduler_map['interface-name'].str.contains('xe') | \
                                    scheduler_map['interface-name'].str.contains('ge') | \
@@ -780,6 +847,7 @@ scheduler_map = scheduler_map.loc[(scheduler_map['admin-status'] == 'up') & \
                                    'scheduler-map-name','description','interface-queues-supported',
                                    'interface-queues-in-use']]
 scheduler_map_default = scheduler_map[scheduler_map['scheduler-map-name'] == '<default>']
+scheduler_map_default.reset_index(drop=True).to_excel(result_path + 'scheduler_map_default.xlsx', engine='xlsxwriter')
 
 inventory_clear = inventory[~(inventory['chassis_style'] == 'inventory')]
 inventory_clear = inventory_clear.drop(columns=['chassis_style'])
@@ -805,51 +873,55 @@ if len(mx_inventory) > 0:
     dpc_check = pd.concat(dpc_check)
 
     network_services = clean_text(network_services)
-    network_services = pd.merge(network_services, dpc_check, on='hostname')
+    network_services = pd.merge(network_services, dpc_check, how='left', on='hostname')
     network_services = network_services.drop(columns=['ip-address'])
     network_services = network_services.loc[:,['hostname','dpc', 'name']]
     network_services = network_services[(network_services['dpc'] == False) & (network_services['name'] != 'Enhanced-IP')]
     network_services.reset_index(drop=True).to_excel(result_path + 'network_services.xlsx', engine='xlsxwriter')
 
-resource_monitor = clean_text(resource_monitor)
-resource_monitor = resource_monitor.loc[:, resource_monitor.columns[~resource_monitor.columns.str.contains('cos-queue-utilization')]]
-resource_monitor = resource_monitor.loc[:, resource_monitor.columns[~resource_monitor.columns.str.contains('pfe-information-summary')]]
-heap_memory = resource_monitor.loc[resource_monitor['heap-memory-threshold'] > 0, ['hostname', 'heap-memory-threshold']]
-resource_monitor_utilization = resource_monitor.loc[:,['hostname','fpc-slot','pfe-num','used-heap-mem-percent','used-filter-counter-percent','used-ifl-counter-percent','used-expansion-memory-percent']]
-resource_monitor_utilization = resource_monitor_utilization.dropna()
-for column in ['fpc-slot','pfe-num','used-heap-mem-percent','used-filter-counter-percent','used-ifl-counter-percent','used-expansion-memory-percent']:
-    resource_monitor_utilization[column] = resource_monitor_utilization[column].astype('int')
-fpc_model_resource_utilization = fpc_model.copy()
-fpc_model_resource_utilization = fpc_model_resource_utilization.rename(columns = {'name':'fpc-slot'})
-fpc_model_resource_utilization['fpc-slot'] = fpc_model_resource_utilization['fpc-slot'].str.replace('fpc','')
-fpc_model_resource_utilization['fpc-slot'] = fpc_model_resource_utilization['fpc-slot'].astype('int')
-resource_monitor_utilization = pd.merge(resource_monitor_utilization, fpc_model_resource_utilization, on=['hostname','fpc-slot'])
+if len(resource_monitor) > 0:
+    resource_monitor = clean_text(resource_monitor)
+    resource_monitor = resource_monitor.loc[:, resource_monitor.columns[~resource_monitor.columns.str.contains('cos-queue-utilization')]]
+    resource_monitor = resource_monitor.loc[:, resource_monitor.columns[~resource_monitor.columns.str.contains('pfe-information-summary')]]
+    heap_memory = resource_monitor.loc[resource_monitor['heap-memory-threshold'] > 0, ['hostname', 'heap-memory-threshold']]
+    resource_monitor_utilization = resource_monitor.loc[:,['hostname','fpc-slot','pfe-num','used-heap-mem-percent','used-filter-counter-percent','used-ifl-counter-percent','used-expansion-memory-percent']]
+    resource_monitor_utilization = resource_monitor_utilization.dropna()
+    for column in ['fpc-slot','pfe-num','used-heap-mem-percent','used-filter-counter-percent','used-ifl-counter-percent','used-expansion-memory-percent']:
+        resource_monitor_utilization[column] = resource_monitor_utilization[column].astype('int')
+    fpc_model_resource_utilization = fpc_model.copy()
+    fpc_model_resource_utilization = fpc_model_resource_utilization.rename(columns = {'name':'fpc-slot'})
+    fpc_model_resource_utilization['fpc-slot'] = fpc_model_resource_utilization['fpc-slot'].str.replace('fpc','')
+    fpc_model_resource_utilization['fpc-slot'] = fpc_model_resource_utilization['fpc-slot'].astype('int')
+    resource_monitor_utilization = pd.merge(resource_monitor_utilization, fpc_model_resource_utilization, how='left', on=['hostname','fpc-slot'])
+    resource_monitor_utilization.reset_index(drop=True).to_excel(result_path + 'resource_monitor_utilization.xlsx',
+                                                                 engine='xlsxwriter')
 
-snapshot = clean_text(snapshot)
-host_vmhost_re = inventory[inventory['description'] == 'RE-S-2X00x6']['hostname'].unique()
-snapshot = snapshot.loc[~snapshot.hostname.isin(host_vmhost_re),:]
-host_junos = inventory.loc[:, ['hostname', 'version']].drop_duplicates().reset_index(drop=True)
-snapshot = pd.merge(snapshot, host_junos, on='hostname')
-snapshot = snapshot.rename(columns={'junos_version':'snapshot_junos_version', 'version':'junos_version'})
+if len(snapshot) > 0:
+    snapshot = clean_text(snapshot)
+    host_vmhost_re = inventory[inventory['description'] == 'RE-S-2X00x6']['hostname'].unique()
+    snapshot = snapshot.loc[~snapshot.hostname.isin(host_vmhost_re),:]
+    host_junos = inventory.loc[:, ['hostname', 'version']].drop_duplicates().reset_index(drop=True)
+    snapshot = pd.merge(snapshot, host_junos, how='left', on='hostname')
+    snapshot = snapshot.rename(columns={'junos_version':'snapshot_junos_version', 'version':'junos_version'})
 
-if 'snapshot-medium' in snapshot.columns:
-    old_snapshot = snapshot.loc[snapshot['snapshot_junos_version'].notnull(), ['hostname', 'snapshot-medium', 'creation-date', 'snapshot_junos_version','junos_version']]
-    old_snapshot['creation-date'] = pd.to_datetime(old_snapshot['creation-date'])
-    old_snapshot['time-ago'] = pd.Timestamp.now() - old_snapshot['creation-date']
-    old_snapshot['check'] = True
-    old_snapshot['check'] = old_snapshot['check'].where(old_snapshot['snapshot_junos_version'] == old_snapshot['junos_version'], False)
-    old_snapshot.reset_index(drop=True).to_excel(result_path + 'old_snapshot.xlsx', engine='xlsxwriter')
+    if 'snapshot-medium' in snapshot.columns:
+        old_snapshot = snapshot.loc[snapshot['snapshot_junos_version'].notnull(), ['hostname', 'snapshot-medium', 'creation-date', 'snapshot_junos_version','junos_version']]
+        old_snapshot['creation-date'] = pd.to_datetime(old_snapshot['creation-date'])
+        old_snapshot['time-ago'] = pd.Timestamp.now() - old_snapshot['creation-date']
+        old_snapshot['check'] = True
+        old_snapshot['check'] = old_snapshot['check'].where(old_snapshot['snapshot_junos_version'] == old_snapshot['junos_version'], False)
+        old_snapshot.reset_index(drop=True).to_excel(result_path + 'old_snapshot.xlsx', engine='xlsxwriter')
 
-if 'location' in snapshot.columns:
-    new_snapshot = snapshot.loc[snapshot['type'].notnull(), ['hostname', 'type', 'date', 'snapshot_junos_version','junos_version', 'location']]
-    new_snapshot['date'] = pd.to_datetime(new_snapshot['date'], utc=True).dt.tz_convert('Europe/Moscow')
-    new_snapshot['time_ago'] = (pd.Timestamp.now(tz='Europe/Moscow') - new_snapshot['date']).dt.days
-    new_snapshot['time_ago'] = new_snapshot['time_ago'].fillna(0)
-    new_snapshot['time_ago'] = new_snapshot['time_ago'].astype('int')
-    new_snapshot['date'] = new_snapshot['date'].dt.strftime('%d-%m-%Y')
-    new_snapshot['check'] = True
-    new_snapshot['check'] = new_snapshot['check'].where(new_snapshot['snapshot_junos_version'] == new_snapshot['junos_version'], False)
-    new_snapshot.reset_index(drop=True).to_excel(result_path + 'new_snapshot.xlsx', engine='xlsxwriter')
+    if 'location' in snapshot.columns:
+        new_snapshot = snapshot.loc[snapshot['type'].notnull(), ['hostname', 'type', 'date', 'snapshot_junos_version','junos_version', 'location']]
+        new_snapshot['date'] = pd.to_datetime(new_snapshot['date'], utc=True).dt.tz_convert('Europe/Moscow')
+        new_snapshot['time_ago'] = (pd.Timestamp.now(tz='Europe/Moscow') - new_snapshot['date']).dt.days
+        new_snapshot['time_ago'] = new_snapshot['time_ago'].fillna(0)
+        new_snapshot['time_ago'] = new_snapshot['time_ago'].astype('int')
+        new_snapshot['date'] = new_snapshot['date'].dt.strftime('%d-%m-%Y')
+        new_snapshot['check'] = True
+        new_snapshot['check'] = new_snapshot['check'].where(new_snapshot['snapshot_junos_version'] == new_snapshot['junos_version'], False)
+        new_snapshot.reset_index(drop=True).to_excel(result_path + 'new_snapshot.xlsx', engine='xlsxwriter')
 
 
 if len(vmhost_version) > 0:
@@ -871,19 +943,85 @@ if len(vmhost_version) > 0:
 
 if len(zone) > 0:
     zone = clean_text(zone)
-    sys_capacity = zone.loc[zone['capacity-sys-remaining'] > 0, ['hostname','capacity-sys-actual','capacity-sys-max','capacity-sys-remaining']]
-    sys_capacity = sys_capacity.sort_values(by='capacity-sys-remaining')
-    zone_capacity = zone.loc[zone['capacity-sys-remaining'] == 0, ['hostname','zone','capacity-actual','capacity-max','capacity-allocated','capacity-remaining','capacity-actual-usage']]
+    sys_capacity = zone.loc[zone['capacity-sys-actual'] > 0, ['hostname', 'capacity-sys-actual', 'capacity-sys-max',
+                                                              'capacity-sys-remaining']]
+    sys_capacity['percent_remaning'] = (sys_capacity['capacity-sys-remaining'] / sys_capacity['capacity-sys-max']) * 100
+    sys_capacity['percent_remaning'] = sys_capacity['percent_remaning'].round(1)
+    sys_capacity = sys_capacity.sort_values(by='percent_remaning')
+    total_slot = fpc_original.groupby('hostname').slot.count().to_frame().rename(columns={'slot': 'total_slot'})
+    online_slot = fpc_original[fpc_original['state'] == 'Online'].groupby('hostname').slot.count().to_frame().rename(
+        columns={'slot': 'online_slot'})
+    offline_slot = fpc_original[fpc_original['state'] != 'Online'].groupby('hostname').slot.count().to_frame().rename(
+        columns={'slot': 'offline_slot'})
+    slots = pd.concat([total_slot, online_slot, offline_slot], axis=1)
+    slots.loc[slots['total_slot'] == slots['online_slot'], 'offline_slot'] = 0
+    slots['offline_slot'] = slots['offline_slot'].astype('int')
+    sys_capacity = pd.merge(sys_capacity, slots, how='left', on='hostname')
+    sys_capacity = sys_capacity.loc[:,
+                   ['hostname', 'capacity-sys-actual', 'capacity-sys-max', 'capacity-sys-remaining', 'percent_remaning',
+                    'total_slot', 'online_slot', 'offline_slot']]
+    sys_capacity['remaning_check'] = False
+    sys_capacity['capacity_check'] = False
+    sys_capacity.loc[sys_capacity['percent_remaning'] < 30, 'remaning_check'] = True
+    sys_capacity.loc[sys_capacity['capacity-sys-actual'] < sys_capacity['capacity-sys-max'], 'capacity_check'] = True
+    sys_capacity.loc[sys_capacity['remaning_check'], 'comment'] = 'The remaining is less than 30 percent'
+    sys_capacity.loc[sys_capacity['capacity_check'], 'comment'] = 'PEM can give more power'
+    sys_capacity.loc[sys_capacity['remaning_check'] & sys_capacity[
+        'capacity_check'], 'comment'] = f'1. The remaining is less than 30 percent\n2.PEM can give more power'
+    sys_capacity = sys_capacity.loc[~sys_capacity['comment'].isna(), :]
+    sys_capacity = sys_capacity.drop(columns=['remaning_check', 'capacity_check']).reset_index(drop=True)
+    sys_capacity.to_excel(result_path + 'sys_capacity.xlsx', engine='xlsxwriter')
+
+    zone_capacity = zone.loc[
+        zone['capacity-sys-actual'] == 0, ['hostname', 'zone', 'capacity-actual', 'capacity-max', 'capacity-allocated',
+                                           'capacity-remaining', 'capacity-actual-usage']]
     zone_capacity = zone_capacity.sort_values(by='capacity-remaining')
-    sys_capacity.reset_index(drop=True).to_excel(result_path + 'pems_sys_capacity.xlsx', engine='xlsxwriter')
-    zone_capacity.reset_index(drop=True).to_excel(result_path + 'pems_zone_capacity.xlsx', engine='xlsxwriter')
+    zone_capacity['percent_remaning'] = (
+                (zone_capacity['capacity-remaining'] / zone_capacity['capacity-actual']) * 100).round(1)
+    zone_capacity = zone_capacity.sort_values(by='percent_remaning')
+    zone_capacity['remaning_check'] = False
+    zone_capacity['capacity_check'] = False
+    zone_capacity.loc[zone_capacity['percent_remaning'] < 20, 'remaning_check'] = True
+    zone_capacity.loc[zone_capacity['capacity-actual'] < zone_capacity['capacity-max'], 'capacity_check'] = True
+    zone_capacity.loc[zone_capacity['remaning_check'], 'comment'] = 'The remaining is less than 30 percent'
+    zone_capacity.loc[zone_capacity['capacity_check'], 'comment'] = 'PEM can give more power'
+    zone_capacity.loc[zone_capacity['remaning_check'] & zone_capacity[
+        'capacity_check'], 'comment'] = f'1. The remaining is less than 30 percent\n2.PEM can give more power'
+    zone_capacity = zone_capacity.loc[~zone_capacity['comment'].isna(), :]
+    zone_capacity = zone_capacity.drop(columns=['remaning_check', 'capacity_check']).reset_index(drop=True)
+    zone_capacity.to_excel(result_path + 'zone_capacity.xlsx', engine='xlsxwriter')
 
 if len(pems) > 0:
     pems = clean_text(pems)
-    pems_state = pems.loc[pems['state'] != 'Online', ['hostname','name','state','status']]
-    pems = pems.loc[pems['state'] == 'Online',['hostname', 'name', 'state','zone','dc-input','capacity-actual','capacity-max','dc-expect-feed','dc-actual-feed']]
-    pems['check'] = True
-    pems['check'] = pems['check'].where(pems['capacity-actual'] == pems['capacity-max'], False)
+    pems_state = pems.copy()
+    pems_state['input-status'] = None
+    for i in ['dc-input', 'ac-input', 'dc-input-status', 'ac-input-status']:
+        if i in pems_state.columns:
+            pems_state.loc[~pems_state[i].isna(), 'input-status'] = pems_state.loc[~pems_state[i].isna(), i]
+    if 'status' in pems_state.columns:
+        pems_state.loc[pems_state['input-status'].isna(), 'input-status'] = pems_state.loc[
+            pems_state['input-status'].isna(), 'status']
+    else:
+        pems_state.loc[pems_state['input-status'].isna(), 'input-status'] = pems_state.loc[
+            pems_state['input-status'].isna(), 'state']
+    pems_state['expect-feed'] = None
+    for i in ['dc-expect-feed', 'ac-expect-feed', 'str-dc-expect-feed', 'str-ac-expect-feed']:
+        if i in pems_state.columns:
+            pems_state.loc[~pems_state[i].isna(), 'expect-feed'] = pems_state.loc[~pems_state[i].isna(), i]
+    pems_state['actual-feed'] = None
+    for i in ['dc-actual-feed', 'ac-actual-feed', 'str-dc-actual-feed', 'str-ac-actual-feed']:
+        if i in pems_state.columns:
+            pems_state.loc[~pems_state[i].isna(), 'actual-feed'] = pems_state.loc[~pems_state[i].isna(), i]
+    pems_state = pems_state.loc[(pems_state['input-status'] != 'OK') | (pems_state['state'] != 'Online') | (
+            pems_state['expect-feed'] != pems_state['actual-feed']) | (
+            pems_state['capacity-actual'] != pems_state['capacity-max']), ['hostname',
+                                                                           'name',
+                                                                           'state',
+                                                                           'input-status',
+                                                                           'expect-feed',
+                                                                           'actual-feed',
+                                                                           'capacity-max',
+                                                                           'capacity-actual']]
     inventory_pem = inventory.copy()
     inventory_pem['name'] = inventory_pem['name'].fillna('Unknown')
     inventory_pem = inventory_pem.loc[inventory_pem['name'].str.contains('PEM'), ['hostname', 'name','model-number']]
@@ -892,27 +1030,10 @@ if len(pems) > 0:
     inventory_power_supply = inventory_pem.loc[inventory_pem['name'].str.contains('Power Supply'), ['hostname', 'name','model-number']]
     inventory_power_supply['name'] = inventory_power_supply['name'].str.replace('Power Supply','PEM')
     inventory_pem = pd.concat([inventory_pem, inventory_power_supply])
-    pems = pd.merge(pems, inventory_pem, on=['hostname','name'])
-    pems_state.reset_index(drop=True).to_excel(result_path + 'pems_state.xlsx', engine='xlsxwriter')
-    pems.reset_index(drop=True).to_excel(result_path + 'pems.xlsx', engine='xlsxwriter')
-
-low_rx_optical_power_dbm.reset_index(drop=True).to_excel(result_path + 'low_rx_optical_power_dbm.xlsx',
-                                                         engine='xlsxwriter')
-high_rx_module_temperature_celsius.reset_index(drop=True).to_excel(
-    result_path + 'high_rx_module_temperature_celsius.xlsx', engine='xlsxwriter')
-low_space.reset_index(drop=True).to_excel(result_path + 'low_space.xlsx', engine='xlsxwriter')
-re_reboot.reset_index(drop=True).to_excel(result_path + 're_reboot.xlsx', engine='xlsxwriter')
-re_memory_buffer_utilization.reset_index(drop=True).to_excel(result_path + 're_memory_buffer_utilization.xlsx',
-                                                             engine='xlsxwriter')
-if len(re_fail_state) > 0:
-    re_fail_state.reset_index(drop=True).to_excel(result_path + 're_fail_state.xlsx', engine='xlsxwriter')
-if len(high_load_cpu_re) > 0:
-    high_load_cpu_re.reset_index(drop=True).to_excel(result_path + 'high_load_cpu_re.xlsx', engine='xlsxwriter')
-
-ntp_check.reset_index(drop=True).to_excel(result_path + 'ntp.xlsx', engine='xlsxwriter')
-fpc_rebooted.reset_index(drop=True).to_excel(result_path + 'fpc_reboot.xlsx', engine='xlsxwriter')
-fpc_utilization.reset_index(drop=True).to_excel(result_path + 'fpc_utilization.xlsx', engine='xlsxwriter')
-scheduler_map_default.reset_index(drop=True).to_excel(result_path + 'scheduler_map_default.xlsx', engine='xlsxwriter')
-resource_monitor_utilization.reset_index(drop=True).to_excel(result_path + 'resource_monitor_utilization.xlsx', engine='xlsxwriter')
+    pems_state = pd.merge(pems_state, inventory_pem, how='left', on=['hostname','name']).reset_index(drop=True)
+    pems_state.loc[(pems_state['input-status'] != 'OK') | (pems_state['state'] != 'Online') , 'comment'] = 'Check state'
+    pems_state.loc[pems_state['capacity_check'](
+            pems_state['expect-feed'] != pems_state['actual-feed']) , 'comment'] = 'Check feed'
+    pems_state.to_excel(result_path + 'pems_state.xlsx', engine='xlsxwriter')
 
 logging.info(f'Script stops\n==================================+')
