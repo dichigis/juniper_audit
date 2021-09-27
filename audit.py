@@ -633,7 +633,7 @@ def connect_n_collect(host):
 logging.info(f'Script starts\n===================================')
 device_list = pd.read_csv(dir_path + '/data/hosts.csv', sep=';')
 
-with Pool(16) as p:
+with Pool(4) as p:
     audit_list = list(p.map(connect_n_collect, list(device_list['hosts'].unique())))
 #
 # audit_list = []
