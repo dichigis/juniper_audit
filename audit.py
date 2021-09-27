@@ -633,7 +633,7 @@ def connect_n_collect(host):
 logging.info(f'Script starts\n===================================')
 device_list = pd.read_csv(dir_path + '/data/hosts.csv', sep=';')
 
-with Pool(4) as p:
+with Pool(16) as p:
     audit_list = list(p.map(connect_n_collect, list(device_list['hosts'].unique())))
 #
 # audit_list = []
@@ -1031,9 +1031,8 @@ if len(pems) > 0:
     inventory_power_supply['name'] = inventory_power_supply['name'].str.replace('Power Supply','PEM')
     inventory_pem = pd.concat([inventory_pem, inventory_power_supply])
     pems_state = pd.merge(pems_state, inventory_pem, how='left', on=['hostname','name']).reset_index(drop=True)
-    pems_state.loc[(pems_state['input-status'] != 'OK') | (pems_state['state'] != 'Online') , 'comment'] = 'Check state'
-    pems_state.loc[pems_state['capacity_check'](
-            pems_state['expect-feed'] != pems_state['actual-feed']) , 'comment'] = 'Check feed'
+    pems_state.loc[(pems_state['input-status'] != 'OK') | (pems_state['state'] != 'Online'), 'comment'] = 'Check state'
+    pems_state.loc[pems_state['expect-feed'] != pems_state['actual-feed'], 'comment'] = 'Check feed'
     pems_state.to_excel(result_path + 'pems_state.xlsx', engine='xlsxwriter')
 
 logging.info(f'Script stops\n==================================+')
